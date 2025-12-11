@@ -1,4 +1,4 @@
-name: Nuclei API DAST via Swagger (Binary + Docker)
+name: Nuclei API DAST (Swagger → Templates → Docker Scan)
 
 on:
   push:
@@ -11,32 +11,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Install nuclei binary LOCALLY (no sudo, no system dirs)
-      - name: Install Nuclei Binary
+      #############################################
+      # 1) Install nuclei v3.1.7 (OpenAPI supported)
+      #############################################
+      - name: Install Nuclei v3.1.7 (OpenAPI-supported)
         run: |
-          curl -L -o nuclei.zip \
-            $(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
-               | grep "browser_download_url.*linux_amd64.zip" \
-               | cut -d '"' -f 4)
+          wget https://github.com/projectdiscovery/nuclei/releases/download/v3.1.7/nuclei_3.1.7_linux_amd64.zip -O nuclei317.zip
+          unzip nuclei317.zip -d nuclei317
+          chmod +x nuclei317/nuclei
+          mv nuclei317/nuclei ./nuclei
 
-          unzip nuclei.zip -d nuclei-bin
-
-          chmod +x nuclei-bin/nuclei
-          mv nuclei-bin/nuclei ./nuclei
-
-      # Download Swagger
+      #############################################
+      # 2) Download Swagger File
+      #############################################
       - name: Download Swagger Spec
         run: |
           wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
-      # Generate API Templates from Swagger
-      - name: Generate API Templates
+      #############################################
+      # 3) Generate API Templates from Swagger
+      #############################################
+      - name: Generate API Templates (OpenAPI)
         run: |
           mkdir -p oas-templates
           ./nuclei -openapi swagger.json -o oas-templates/
 
-      # Run DAST Scan using Docker
-      - name: Run Nuclei Scan (Docker)
+      #############################################
+      # 4) Run DAST Scan Using Docker Nuclei
+      #############################################
+      - name: Run Nuclei DAST Scan (Docker)
         run: |
           mkdir -p results
           docker run --rm \
@@ -46,7 +49,9 @@ jobs:
                    -severity low,medium,high,critical \
                    -o /work/results/api-dast-results.txt
 
-      # Upload results
+      #############################################
+      # 5) Upload Report As Artifact
+      #############################################
       - name: Upload Scan Results
         uses: actions/upload-artifact@v4
         with:
