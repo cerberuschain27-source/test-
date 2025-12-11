@@ -1,1 +1,10 @@
+POST /api/login HTTP/1.1
+Host: demo.testfire.net
+Content-Type: application/json
+Accept: application/json
+
+{
+  "username": "jsmith",
+  "password": "demo1234"
+}
 
