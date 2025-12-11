@@ -1,4 +1,4 @@
-name: Nuclei API Scan
+name: Nuclei Simple Scan
 
 on:
   push:
@@ -10,38 +10,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ---------------- GET REQUEST SCAN ----------------
-      - name: Run Nuclei GET Scan
+      # ---------------- GET REQUEST ----------------
+      - name: Run Nuclei GET
         run: |
           docker run --rm \
-            -v ${{ github.workspace }}:/root/ \
+            -v ${{ github.workspace }}:/root \
             projectdiscovery/nuclei:latest \
             nuclei -t /root/api-scan.yaml \
                    -var RequestFile=/root/get.txt \
                    -u https://demo.testfire.net \
-                   -o /root/nuclei-get-output.txt
+          > nuclei-get-output.txt
 
-      - name: Upload GET results
+      - name: Upload GET Output
         uses: actions/upload-artifact@v4
         with:
           name: nuclei-get-results
           path: nuclei-get-output.txt
 
-      # ---------------- POST REQUEST SCAN ----------------
-      - name: Run Nuclei POST Scan
+      # ---------------- POST REQUEST ----------------
+      - name: Run Nuclei POST
         run: |
           docker run --rm \
-            -v ${{ github.workspace }}:/root/ \
+            -v ${{ github.workspace }}:/root \
             projectdiscovery/nuclei:latest \
             nuclei -t /root/api-scan.yaml \
                    -var RequestFile=/root/post.txt \
                    -u https://demo.testfire.net \
-                   -o /root/nuclei-post-output.txt
+          > nuclei-post-output.txt
 
-      - name: Upload POST results
+      - name: Upload POST Output
         uses: actions/upload-artifact@v4
         with:
           name: nuclei-post-results
