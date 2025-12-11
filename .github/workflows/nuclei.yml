@@ -1,0 +1,30 @@
+name: Nuclei API Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Scan GET request
+      - name: Run Nuclei GET Scan
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/root/ \
+            projectdiscovery/nuclei:latest \
+            nuclei -t /root/api-scan.yaml -var RequestFile=/root/get.txt -u https://demo.testfire.net
+
+      # Scan POST request
+      - name: Run Nuclei POST Scan
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/root/ \
+            projectdiscovery/nuclei:latest \
+            nuclei -t /root/api-scan.yaml -var RequestFile=/root/post.txt -u https://demo.testfire.net
