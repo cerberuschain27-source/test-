@@ -1,105 +1,43 @@
-name: ZAP DAST (Raw GET/POST)
+name: Nuclei API DAST via Swagger
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  zap:
+  dast:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      # Debug: show repo contents
-      - name: DEBUG — Show workspace
+      - name: Install Nuclei
         run: |
-          echo "=== WORKSPACE ==="
-          pwd
-          ls -la .
+          curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
+            | grep "browser_download_url.*linux_amd64.zip" \
+            | cut -d '"' -f 4 \
+            | wget -i -
+          unzip nuclei_*_linux_amd64.zip
+          sudo mv nuclei /usr/local/bin/
 
-      # Start ZAP with repo mounted correctly
-      - name: Start ZAP daemon
+      - name: Download Swagger Spec
         run: |
-          docker run -d --name zap \
-            -u root \
-            -p 8080:8080 \
-            -v ${{ github.workspace }}:/zap/wrk \
-            ghcr.io/zaproxy/zaproxy:latest \
-            zap.sh -daemon -port 8080 -host 0.0.0.0 \
-            -config api.disablekey=true
+          wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
-      # Wait for ZAP to start
-      - name: Wait for ZAP
-        run: sleep 20
-
-      # Import GET request
-      - name: Import GET.txt
+      - name: Generate Nuclei Templates from OpenAPI
         run: |
-          docker exec zap bash -c "
-            echo '=== Importing GET.txt ==='
-            curl -s -X POST \
-              --data-urlencode \"request=$(cat /zap/wrk/get.txt)\" \
-              http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
-          "
+          mkdir -p oas-templates
+          nuclei -openapi swagger.json -o oas-templates/
 
-      # Import POST request
-      - name: Import POST.txt
+      - name: Run Nuclei API DAST Scan
         run: |
-          docker exec zap bash -c "
-            echo '=== Importing POST.txt ==='
-            curl -s -X POST \
-              --data-urlencode \"request=$(cat /zap/wrk/post.txt)\" \
-              http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
-          "
+          mkdir -p results
+          nuclei -t oas-templates/ \
+                 -severity low,medium,high,critical \
+                 -o results/api-dast-results.txt
 
-      # Fetch URLs imported into ZAP
-      - name: Fetch URLs
-        id: urls
-        run: |
-          URLS=$(docker exec zap curl -s http://localhost:8080/JSON/core/view/urls/ | jq -r '.urls[]')
-          echo "Imported URLs:"
-          echo "$URLS"
-          echo "urls<<EOF" >> $GITHUB_OUTPUT
-          echo "$URLS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      # Add URLs to ZAP scope
-      - name: Add URLs to Scope
-        run: |
-          for u in ${{ steps.urls.outputs.urls }}; do
-            echo "Adding to scope: $u"
-            docker exec zap curl -s \
-              "http://localhost:8080/JSON/context/action/includeInContext/?contextName=Default+Context&regex=$(echo $u | sed 's/\//\\\\\//g')"
-          done
-
-      # Run Active Scan on all imported URLs
-      - name: Active Scan
-        run: |
-          for u in ${{ steps.urls.outputs.urls }}; do
-            echo "Scanning URL: $u"
-            docker exec zap curl -s \
-              "http://localhost:8080/JSON/ascan/action/scan/?url=$u&recurse=true&inScopeOnly=true"
-          done
-
-      # Wait for scan to run
-      - name: Wait for scan to finish
-        run: sleep 40
-
-      # Generate HTML & JSON reports
-      - name: Generate Reports
-        run: |
-          docker exec zap mkdir -p /zap/wrk/reports
-          docker exec zap curl -s \
-            "http://localhost:8080/OTHER/core/other/htmlreport/" \
-            -o /zap/wrk/reports/zap-report.html
-          docker exec zap curl -s \
-            "http://localhost:8080/OTHER/core/other/jsonreport/" \
-            -o /zap/wrk/reports/zap-report.json
-
-      # Upload results
-      - name: Upload Reports
+      - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
-          name: zap-dast-results
-          path: reports/
+          name: nuclei-api-dast-results
+          path: results/
