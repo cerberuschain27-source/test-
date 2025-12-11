@@ -1,19 +1,17 @@
-name: Nuclei API DAST (Swagger → Templates → Docker Scan)
+name: nuclei-api-dast
 
 on:
   workflow_dispatch:
   push:
 
 jobs:
-  nuclei:
+  dast:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      #############################################
-      # 1) Install nuclei v3.1.7 (OpenAPI support)
-      #############################################
       - name: Install Nuclei v3.1.7
         run: |
           wget https://github.com/projectdiscovery/nuclei/releases/download/v3.1.7/nuclei_3.1.7_linux_amd64.zip -O nuclei317.zip
@@ -21,37 +19,25 @@ jobs:
           chmod +x nuclei317/nuclei
           mv nuclei317/nuclei ./nuclei
 
-      #############################################
-      # 2) Download Swagger
-      #############################################
-      - name: Download Swagger Spec
+      - name: Download Swagger
         run: |
           wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
-      #############################################
-      # 3) Generate Templates
-      #############################################
-      - name: Generate API Templates
+      - name: Generate Templates
         run: |
           mkdir -p oas-templates
           ./nuclei -openapi swagger.json -o oas-templates/
 
-      #############################################
-      # 4) Run Scan via Docker
-      #############################################
-      - name: Run Nuclei DAST Scan (Docker)
+      - name: Run Nuclei Scan (Docker)
         run: |
           mkdir -p results
           docker run --rm \
             -v ${{ github.workspace }}:/work \
             projectdiscovery/nuclei:latest \
             nuclei -t /work/oas-templates/ \
-                   -o /work/results/api-dast-results.txt \
-                   -severity low,medium,high,critical
+              -o /work/results/api-dast-results.txt \
+              -severity low,medium,high,critical
 
-      #############################################
-      # 5) Upload Results
-      #############################################
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
