@@ -1,4 +1,4 @@
-name: Nuclei API DAST via Swagger (Docker)
+name: Nuclei API DAST via Swagger (Binary + Docker)
 
 on:
   push:
@@ -11,22 +11,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Download Swagger Spec
-      - name: Download Swagger
+      #############################################
+      # 1) Install Nuclei binary (for OpenAPI)
+      #############################################
+      - name: Install Nuclei Binary
+        run: |
+          curl -L -o nuclei.zip \
+            $(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
+               | grep "browser_download_url.*linux_amd64.zip" \
+               | cut -d '"' -f 4)
+          
+          mkdir nuclei-bin
+          unzip nuclei.zip -d nuclei-bin
+          sudo mv nuclei-bin/nuclei /usr/local/bin/nuclei
+
+      #############################################
+      # 2) Download Swagger File
+      #############################################
+      - name: Download Swagger Spec
         run: |
           wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
-      # Generate API templates using nuclei-openapi Docker
-      - name: Generate Templates
+      #############################################
+      # 3) Generate API Templates from OpenAPI
+      #############################################
+      - name: Generate API Templates
         run: |
           mkdir -p oas-templates
-          docker run --rm \
-            -v ${{ github.workspace }}:/work \
-            projectdiscovery/nuclei-openapi:latest \
-            -openapi /work/swagger.json -output /work/oas-templates/
+          nuclei -openapi swagger.json -o oas-templates/
 
-      # Run DAST Scan using Nuclei
-      - name: Run Nuclei Scan
+      #############################################
+      # 4) Run DAST scan using Docker Nuclei
+      #############################################
+      - name: Run Nuclei DAST Scan (Docker)
         run: |
           mkdir -p results
           docker run --rm \
@@ -36,8 +53,10 @@ jobs:
                    -severity low,medium,high,critical \
                    -o /work/results/api-dast-results.txt
 
-      # Upload Results
-      - name: Upload Results
+      #############################################
+      # 5) Upload Results
+      #############################################
+      - name: Upload Scan Results
         uses: actions/upload-artifact@v4
         with:
           name: nuclei-api-dast-results
