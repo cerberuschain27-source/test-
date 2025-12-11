@@ -11,61 +11,61 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # --- DEBUG: Show files in workspace ---
-      - name: DEBUG — Show repo files
+      # Debug: show repo contents
+      - name: DEBUG — Show workspace
         run: |
-          echo "=== RUNNER WORKSPACE ==="
+          echo "=== WORKSPACE ==="
           pwd
           ls -la .
 
-      # --- START ZAP ---
+      # Start ZAP with repo mounted correctly
       - name: Start ZAP daemon
         run: |
           docker run -d --name zap \
             -u root \
             -p 8080:8080 \
-            -v ${{ github.workspace }}/..:/zap/wrk \
+            -v ${{ github.workspace }}:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:latest \
             zap.sh -daemon -port 8080 -host 0.0.0.0 \
             -config api.disablekey=true
 
-      - name: Wait for ZAP startup
+      # Wait for ZAP to start
+      - name: Wait for ZAP
         run: sleep 20
 
-      # --- IMPORT RAW GET REQUEST ---
+      # Import GET request
       - name: Import GET.txt
         run: |
           docker exec zap bash -c "
-            echo '=== Importing GET ==='
+            echo '=== Importing GET.txt ==='
             curl -s -X POST \
-              --data-urlencode \"request=$(cat /zap/wrk/test-/get.txt)\" \
+              --data-urlencode \"request=$(cat /zap/wrk/get.txt)\" \
               http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
-      # --- IMPORT RAW POST REQUEST ---
+      # Import POST request
       - name: Import POST.txt
         run: |
           docker exec zap bash -c "
-            echo '=== Importing POST ==='
+            echo '=== Importing POST.txt ==='
             curl -s -X POST \
-              --data-urlencode \"request=$(cat /zap/wrk/test-/post.txt)\" \
+              --data-urlencode \"request=$(cat /zap/wrk/post.txt)\" \
               http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
-      # --- GET ALL IMPORTED URLS ---
-      - name: Fetch imported URLs
+      # Fetch URLs imported into ZAP
+      - name: Fetch URLs
         id: urls
         run: |
-          URLS=$(docker exec zap curl -s \
-            http://localhost:8080/JSON/core/view/urls/ | jq -r '.urls[]')
+          URLS=$(docker exec zap curl -s http://localhost:8080/JSON/core/view/urls/ | jq -r '.urls[]')
           echo "Imported URLs:"
           echo "$URLS"
           echo "urls<<EOF" >> $GITHUB_OUTPUT
           echo "$URLS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # --- ADD URLs TO SCOPE ---
-      - name: Add URLs to ZAP Scope
+      # Add URLs to ZAP scope
+      - name: Add URLs to Scope
         run: |
           for u in ${{ steps.urls.outputs.urls }}; do
             echo "Adding to scope: $u"
@@ -73,33 +73,31 @@ jobs:
               "http://localhost:8080/JSON/context/action/includeInContext/?contextName=Default+Context&regex=$(echo $u | sed 's/\//\\\\\//g')"
           done
 
-      # --- ACTIVE SCAN ---
+      # Run Active Scan on all imported URLs
       - name: Active Scan
         run: |
           for u in ${{ steps.urls.outputs.urls }}; do
-            echo "Scanning: $u"
+            echo "Scanning URL: $u"
             docker exec zap curl -s \
               "http://localhost:8080/JSON/ascan/action/scan/?url=$u&recurse=true&inScopeOnly=true"
           done
 
-      - name: Wait for scanning
-        run: sleep 45
+      # Wait for scan to run
+      - name: Wait for scan to finish
+        run: sleep 40
 
-      # --- GENERATE REPORTS ---
-      - name: Generate HTML Report
+      # Generate HTML & JSON reports
+      - name: Generate Reports
         run: |
           docker exec zap mkdir -p /zap/wrk/reports
           docker exec zap curl -s \
             "http://localhost:8080/OTHER/core/other/htmlreport/" \
             -o /zap/wrk/reports/zap-report.html
-
-      - name: Generate JSON Report
-        run: |
           docker exec zap curl -s \
             "http://localhost:8080/OTHER/core/other/jsonreport/" \
             -o /zap/wrk/reports/zap-report.json
 
-      # --- UPLOAD REPORTS ---
+      # Upload results
       - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
