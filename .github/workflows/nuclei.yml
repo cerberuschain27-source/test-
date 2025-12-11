@@ -11,22 +11,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Run API scan with Swagger (OpenAPI JSON)
-      - name: Run ZAP API Scan
+      - name: Run ZAP API Scan (Swagger)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/zap/wrk \
-            owasp/zap2docker-stable \
+            ghcr.io/zaproxy/zaproxy:stable \
             zap-api-scan.py \
               -t https://demo.testfire.net/swagger/properties.json \
               -f openapi \
               -r zap-report.html \
               -w zap-warnings.md \
               -x zap-report.xml \
-              -J zap-report.json \
-              -d
+              -J zap-report.json
 
-      # Upload all ZAP reports
       - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
