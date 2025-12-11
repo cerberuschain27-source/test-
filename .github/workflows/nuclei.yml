@@ -11,33 +11,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # --- DEBUG: Show files in workspace ---
+      - name: DEBUG — Show repo files
+        run: |
+          echo "=== RUNNER WORKSPACE ==="
+          pwd
+          ls -la .
+
+      # --- START ZAP ---
       - name: Start ZAP daemon
         run: |
           docker run -d --name zap \
             -u root \
             -p 8080:8080 \
-            -v ${{ github.workspace }}:/zap/wrk \
+            -v ${{ github.workspace }}/..:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:latest \
             zap.sh -daemon -port 8080 -host 0.0.0.0 \
             -config api.disablekey=true
+
       - name: Wait for ZAP startup
         run: sleep 20
 
-      # --- IMPORT RAW REQUESTS ---
+      # --- IMPORT RAW GET REQUEST ---
       - name: Import GET.txt
         run: |
           docker exec zap bash -c "
+            echo '=== Importing GET ==='
             curl -s -X POST \
-            --data-urlencode \"request=$(cat /zap/wrk/get.txt)\" \
-            http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
+              --data-urlencode \"request=$(cat /zap/wrk/test-/get.txt)\" \
+              http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
+      # --- IMPORT RAW POST REQUEST ---
       - name: Import POST.txt
         run: |
           docker exec zap bash -c "
+            echo '=== Importing POST ==='
             curl -s -X POST \
-            --data-urlencode \"request=$(cat /zap/wrk/post.txt)\" \
-            http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
+              --data-urlencode \"request=$(cat /zap/wrk/test-/post.txt)\" \
+              http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
       # --- GET ALL IMPORTED URLS ---
@@ -46,12 +58,13 @@ jobs:
         run: |
           URLS=$(docker exec zap curl -s \
             http://localhost:8080/JSON/core/view/urls/ | jq -r '.urls[]')
+          echo "Imported URLs:"
           echo "$URLS"
           echo "urls<<EOF" >> $GITHUB_OUTPUT
           echo "$URLS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # --- ADD URLs TO SCOPE (CRITICAL STEP) ---
+      # --- ADD URLs TO SCOPE ---
       - name: Add URLs to ZAP Scope
         run: |
           for u in ${{ steps.urls.outputs.urls }}; do
@@ -60,11 +73,11 @@ jobs:
               "http://localhost:8080/JSON/context/action/includeInContext/?contextName=Default+Context&regex=$(echo $u | sed 's/\//\\\\\//g')"
           done
 
-      # --- ACTIVE SCAN EVERY IN-SCOPE URL ---
+      # --- ACTIVE SCAN ---
       - name: Active Scan
         run: |
           for u in ${{ steps.urls.outputs.urls }}; do
-            echo "Active Scanning: $u"
+            echo "Scanning: $u"
             docker exec zap curl -s \
               "http://localhost:8080/JSON/ascan/action/scan/?url=$u&recurse=true&inScopeOnly=true"
           done
@@ -86,7 +99,7 @@ jobs:
             "http://localhost:8080/OTHER/core/other/jsonreport/" \
             -o /zap/wrk/reports/zap-report.json
 
-      # --- UPLOAD AS ARTIFACT ---
+      # --- UPLOAD REPORTS ---
       - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
