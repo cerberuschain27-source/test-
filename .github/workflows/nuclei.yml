@@ -1,41 +1,42 @@
-name: Nuclei API DAST via Swagger
+name: Nuclei API DAST via Swagger (Docker)
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  dast:
+  nuclei:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Nuclei
-        run: |
-          curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
-            | grep "browser_download_url.*linux_amd64.zip" \
-            | cut -d '"' -f 4 \
-            | wget -i -
-          unzip nuclei_*_linux_amd64.zip
-          sudo mv nuclei /usr/local/bin/
-
-      - name: Download Swagger Spec
+      # Download swagger file
+      - name: Download Swagger
         run: |
           wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
-      - name: Generate Nuclei Templates from OpenAPI
+      # Generate templates from swagger using Nuclei Docker
+      - name: Generate Nuclei Templates (OpenAPI -> Templates)
         run: |
           mkdir -p oas-templates
-          nuclei -openapi swagger.json -o oas-templates/
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            projectdiscovery/nuclei:latest \
+            nuclei -openapi /work/swagger.json -o /work/oas-templates/
 
-      - name: Run Nuclei API DAST Scan
+      # Run DAST scan using generated templates
+      - name: Run Nuclei DAST Scan (Docker)
         run: |
           mkdir -p results
-          nuclei -t oas-templates/ \
-                 -severity low,medium,high,critical \
-                 -o results/api-dast-results.txt
+          docker run --rm \
+            -v ${{ github.workspace }}:/work \
+            projectdiscovery/nuclei:latest \
+            nuclei -t /work/oas-templates/ \
+                   -severity low,medium,high,critical \
+                   -o /work/results/api-dast-results.txt
 
+      # Upload results
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
