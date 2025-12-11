@@ -11,39 +11,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      #############################################
-      # 1) Install Nuclei binary (for OpenAPI)
-      #############################################
+      # Install nuclei binary LOCALLY (no sudo, no system dirs)
       - name: Install Nuclei Binary
         run: |
           curl -L -o nuclei.zip \
             $(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
                | grep "browser_download_url.*linux_amd64.zip" \
                | cut -d '"' -f 4)
-          
-          mkdir nuclei-bin
-          unzip nuclei.zip -d nuclei-bin
-          sudo mv nuclei-bin/nuclei /usr/local/bin/nuclei
 
-      #############################################
-      # 2) Download Swagger File
-      #############################################
+          unzip nuclei.zip -d nuclei-bin
+
+          chmod +x nuclei-bin/nuclei
+          mv nuclei-bin/nuclei ./nuclei
+
+      # Download Swagger
       - name: Download Swagger Spec
         run: |
           wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
-      #############################################
-      # 3) Generate API Templates from OpenAPI
-      #############################################
+      # Generate API Templates from Swagger
       - name: Generate API Templates
         run: |
           mkdir -p oas-templates
-          nuclei -openapi swagger.json -o oas-templates/
+          ./nuclei -openapi swagger.json -o oas-templates/
 
-      #############################################
-      # 4) Run DAST scan using Docker Nuclei
-      #############################################
-      - name: Run Nuclei DAST Scan (Docker)
+      # Run DAST Scan using Docker
+      - name: Run Nuclei Scan (Docker)
         run: |
           mkdir -p results
           docker run --rm \
@@ -53,9 +46,7 @@ jobs:
                    -severity low,medium,high,critical \
                    -o /work/results/api-dast-results.txt
 
-      #############################################
-      # 5) Upload Results
-      #############################################
+      # Upload results
       - name: Upload Scan Results
         uses: actions/upload-artifact@v4
         with:
