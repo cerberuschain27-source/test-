@@ -1,62 +1,63 @@
-name: FULL NUCLEI DAST
+name: ZAP DAST Scan (Raw GET/POST)
 
 on:
   push:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
-  scan:
+  zap-scan:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ---------------- FULL DAST AGAINST TARGET ----------------
-      - name: Full Nuclei DAST Scan (ALL TEMPLATES)
+      - name: Start ZAP Container
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/root \
-            projectdiscovery/nuclei:latest \
-            nuclei -u https://demo.testfire.net \
-                   -severity low,medium,high,critical,unknown \
-                   -tags cve,api,network,misc,exposure,misconfig,default-credentials,auth,xss,ssrf,rce,sqli,lfi,rfi,redirect \
-                   -duc -rl 50 -c 50 \
-          > nuclei-full-dast.txt
+          docker run -d --name zap \
+            -u root \
+            -p 8080:8080 \
+            -v ${{ github.workspace }}:/zap/wrk \
+            owasp/zap2docker-stable \
+            zap.sh -daemon -port 8080 -config api.disablekey=true
 
-      - name: Upload FULL DAST results
+      - name: Wait for ZAP Startup
+        run: sleep 20
+
+      # --- REPLAY RAW GET REQUEST ---
+      - name: Replay GET.txt via ZAP (Raw HTTP)
+        run: |
+          docker exec zap bash -c "
+            echo '>>> Importing raw GET request'
+            cat /zap/wrk/get.txt | nc localhost 8080
+          "
+
+      # --- REPLAY RAW POST REQUEST ---
+      - name: Replay POST.txt via ZAP (Raw HTTP)
+        run: |
+          docker exec zap bash -c "
+            echo '>>> Importing raw POST request'
+            cat /zap/wrk/post.txt | nc localhost 8080
+          "
+
+      # --- ACTIVE SCAN ---
+      - name: Run ZAP Active Scan (Full DAST)
+        run: |
+          docker exec zap zap-cli --api-key '' active-scan --scanners all --recursive
+
+      # --- GENERATE REPORTS ---
+      - name: Generate HTML Report
+        run: |
+          docker exec zap mkdir -p /zap/wrk/reports
+          docker exec zap zap-cli --api-key '' report -o /zap/wrk/reports/zap-report.html -f html
+
+      - name: Generate JSON Report
+        run: |
+          docker exec zap zap-cli --api-key '' report -o /zap/wrk/reports/zap-report.json -f json
+
+      # --- UPLOAD RESULTS ---
+      - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
-          name: nuclei-full-dast-results
-          path: nuclei-full-dast.txt
-
-      # ---------------- RAW GET REQUEST ----------------
-      - name: Raw GET scan
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/root \
-            projectdiscovery/nuclei:latest \
-            nuclei -t /root/api-scan.yaml -var RequestFile=/root/get.txt \
-          > nuclei-get.txt
-
-      - name: Upload GET results
-        uses: actions/upload-artifact@v4
-        with:
-          name: nuclei-get-results
-          path: nuclei-get.txt
-
-      # ---------------- RAW POST REQUEST ----------------
-      - name: Raw POST scan
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/root \
-            projectdiscovery/nuclei:latest \
-            nuclei -t /root/api-scan.yaml -var RequestFile=/root/post.txt \
-          > nuclei-post.txt
-
-      - name: Upload POST results
-        uses: actions/upload-artifact@v4
-        with:
-          name: nuclei-post-results
-          path: nuclei-post.txt
+          name: zap-dast-results
+          path: reports/
