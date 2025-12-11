@@ -11,22 +11,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Download swagger file
+      # Download Swagger Spec
       - name: Download Swagger
         run: |
           wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
-      # Generate templates from swagger using Nuclei Docker
-      - name: Generate Nuclei Templates (OpenAPI -> Templates)
+      # Generate API templates using nuclei-openapi Docker
+      - name: Generate Templates
         run: |
           mkdir -p oas-templates
           docker run --rm \
             -v ${{ github.workspace }}:/work \
-            projectdiscovery/nuclei:latest \
-            nuclei -openapi /work/swagger.json -o /work/oas-templates/
+            projectdiscovery/nuclei-openapi:latest \
+            -openapi /work/swagger.json -output /work/oas-templates/
 
-      # Run DAST scan using generated templates
-      - name: Run Nuclei DAST Scan (Docker)
+      # Run DAST Scan using Nuclei
+      - name: Run Nuclei Scan
         run: |
           mkdir -p results
           docker run --rm \
@@ -36,7 +36,7 @@ jobs:
                    -severity low,medium,high,critical \
                    -o /work/results/api-dast-results.txt
 
-      # Upload results
+      # Upload Results
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
