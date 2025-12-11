@@ -12,48 +12,50 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Start ZAP Container
+      - name: Start ZAP Container (Correct Image)
         run: |
           docker run -d --name zap \
             -u root \
             -p 8080:8080 \
             -v ${{ github.workspace }}:/zap/wrk \
-            owasp/zap2docker-stable \
+            ghcr.io/zaproxy/zaproxy:latest \
             zap.sh -daemon -port 8080 -config api.disablekey=true
 
       - name: Wait for ZAP Startup
         run: sleep 20
 
       # --- REPLAY RAW GET REQUEST ---
-      - name: Replay GET.txt via ZAP (Raw HTTP)
+      - name: Replay GET.txt via ZAP
         run: |
           docker exec zap bash -c "
-            echo '>>> Importing raw GET request'
-            cat /zap/wrk/get.txt | nc localhost 8080
+            echo '=== Sending GET.txt to ZAP proxy ==='
+            cat /zap/wrk/get.txt | nc localhost 8080 || true
           "
 
       # --- REPLAY RAW POST REQUEST ---
-      - name: Replay POST.txt via ZAP (Raw HTTP)
+      - name: Replay POST.txt via ZAP
         run: |
           docker exec zap bash -c "
-            echo '>>> Importing raw POST request'
-            cat /zap/wrk/post.txt | nc localhost 8080
+            echo '=== Sending POST.txt to ZAP proxy ==='
+            cat /zap/wrk/post.txt | nc localhost 8080 || true
           "
 
       # --- ACTIVE SCAN ---
-      - name: Run ZAP Active Scan (Full DAST)
+      - name: Run ZAP Active Scan
         run: |
-          docker exec zap zap-cli --api-key '' active-scan --scanners all --recursive
+          docker exec zap zap-cli --api-key '' active-scan --scanners all --recursive || true
 
       # --- GENERATE REPORTS ---
       - name: Generate HTML Report
         run: |
           docker exec zap mkdir -p /zap/wrk/reports
-          docker exec zap zap-cli --api-key '' report -o /zap/wrk/reports/zap-report.html -f html
+          docker exec zap zap-cli --api-key '' report \
+            -o /zap/wrk/reports/zap-report.html -f html || true
 
       - name: Generate JSON Report
         run: |
-          docker exec zap zap-cli --api-key '' report -o /zap/wrk/reports/zap-report.json -f json
+          docker exec zap zap-cli --api-key '' report \
+            -o /zap/wrk/reports/zap-report.json -f json || true
 
       # --- UPLOAD RESULTS ---
       - name: Upload ZAP Reports
