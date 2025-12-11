@@ -1,59 +1,38 @@
-name: Nuclei API DAST (Swagger → Templates → Docker Scan)
+name: ZAP API DAST (Swagger)
 
 on:
   workflow_dispatch:
   push:
 
 jobs:
-  dast:
+  zap:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      #############################################
-      # 1) Install nuclei-openapi (THE REAL TOOL)
-      #############################################
-      - name: Install nuclei-openapi
+      # Run API scan with Swagger (OpenAPI JSON)
+      - name: Run ZAP API Scan
         run: |
-          wget https://github.com/projectdiscovery/nuclei-openapi/releases/download/v1.0.9/nuclei-openapi_1.0.9_linux_amd64.zip -O openapi.zip
-          unzip openapi.zip -d openapi-bin
-          chmod +x openapi-bin/nuclei-openapi
-          mv openapi-bin/nuclei-openapi ./nuclei-openapi
-
-      #############################################
-      # 2) Download Swagger
-      #############################################
-      - name: Download Swagger
-        run: |
-          wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
-
-      #############################################
-      # 3) Generate Templates from Swagger
-      #############################################
-      - name: Generate API Templates
-        run: |
-          mkdir -p oas-templates
-          ./nuclei-openapi -json swagger.json -output oas-templates/
-
-      #############################################
-      # 4) Run Scan via Docker
-      #############################################
-      - name: Run Nuclei Scan (Docker)
-        run: |
-          mkdir -p results
           docker run --rm \
-            -v ${{ github.workspace }}:/work \
-            projectdiscovery/nuclei:latest \
-            nuclei -t /work/oas-templates/ \
-                   -o /work/results/api-dast-results.txt \
-                   -severity low,medium,high,critical
+            -v ${{ github.workspace }}:/zap/wrk \
+            owasp/zap2docker-stable \
+            zap-api-scan.py \
+              -t https://demo.testfire.net/swagger/properties.json \
+              -f openapi \
+              -r zap-report.html \
+              -w zap-warnings.md \
+              -x zap-report.xml \
+              -J zap-report.json \
+              -d
 
-      #############################################
-      # 5) Upload Results
-      #############################################
-      - name: Upload Results
+      # Upload all ZAP reports
+      - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
-          name: nuclei-api-dast-results
-          path: results/
+          name: zap-api-dast-results
+          path: |
+            zap-report.html
+            zap-report.xml
+            zap-report.json
+            zap-warnings.md
