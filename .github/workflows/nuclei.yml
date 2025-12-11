@@ -1,4 +1,4 @@
-name: nuclei-api-dast
+name: Nuclei API DAST (Swagger → Templates → Docker Scan)
 
 on:
   workflow_dispatch:
@@ -9,25 +9,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Nuclei v3.1.7
+      #############################################
+      # 1) Install nuclei-openapi (THE REAL TOOL)
+      #############################################
+      - name: Install nuclei-openapi
         run: |
-          wget https://github.com/projectdiscovery/nuclei/releases/download/v3.1.7/nuclei_3.1.7_linux_amd64.zip -O nuclei317.zip
-          unzip nuclei317.zip -d nuclei317
-          chmod +x nuclei317/nuclei
-          mv nuclei317/nuclei ./nuclei
+          wget https://github.com/projectdiscovery/nuclei-openapi/releases/download/v1.0.9/nuclei-openapi_1.0.9_linux_amd64.zip -O openapi.zip
+          unzip openapi.zip -d openapi-bin
+          chmod +x openapi-bin/nuclei-openapi
+          mv openapi-bin/nuclei-openapi ./nuclei-openapi
 
+      #############################################
+      # 2) Download Swagger
+      #############################################
       - name: Download Swagger
         run: |
           wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
-      - name: Generate Templates
+      #############################################
+      # 3) Generate Templates from Swagger
+      #############################################
+      - name: Generate API Templates
         run: |
           mkdir -p oas-templates
-          ./nuclei -openapi swagger.json -o oas-templates/
+          ./nuclei-openapi -json swagger.json -output oas-templates/
 
+      #############################################
+      # 4) Run Scan via Docker
+      #############################################
       - name: Run Nuclei Scan (Docker)
         run: |
           mkdir -p results
@@ -35,9 +46,12 @@ jobs:
             -v ${{ github.workspace }}:/work \
             projectdiscovery/nuclei:latest \
             nuclei -t /work/oas-templates/ \
-              -o /work/results/api-dast-results.txt \
-              -severity low,medium,high,critical
+                   -o /work/results/api-dast-results.txt \
+                   -severity low,medium,high,critical
 
+      #############################################
+      # 5) Upload Results
+      #############################################
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
