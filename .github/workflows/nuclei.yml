@@ -11,9 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ----------------------------------------------
-      # START ZAP IN DAEMON MODE (CORRECT DOCKER IMAGE)
-      # ----------------------------------------------
       - name: Start ZAP daemon
         run: |
           docker run -d --name zap \
@@ -24,69 +21,69 @@ jobs:
             zap.sh -daemon -port 8080 -host 0.0.0.0 \
             -config api.disablekey=true
 
-      - name: Wait for ZAP to fully start
+      - name: Wait for ZAP to start
         run: sleep 20
 
-      # ----------------------------------------------
-      # IMPORT RAW GET REQUEST
-      # ----------------------------------------------
       - name: Import GET.txt (raw HTTP)
         run: |
           docker exec zap bash -c "
-            echo '=== Importing GET ==='
             curl -s -X POST \
-              --data-urlencode \"request=$(cat /zap/wrk/get.txt)\" \
+              --data-urlencode 'request=$(cat /zap/wrk/get.txt)' \
               http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
-      # ----------------------------------------------
-      # IMPORT RAW POST REQUEST
-      # ----------------------------------------------
       - name: Import POST.txt (raw HTTP)
         run: |
           docker exec zap bash -c "
-            echo '=== Importing POST ==='
             curl -s -X POST \
-              --data-urlencode \"request=$(cat /zap/wrk/post.txt)\" \
+              --data-urlencode 'request=$(cat /zap/wrk/post.txt)' \
               http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
-      # ----------------------------------------------
-      # RUN ACTIVE SCAN ON ALL IMPORTED RESOURCES
-      # (no hardcoding — ZAP scans whatever was imported)
-      # ----------------------------------------------
-      - name: Start Active Scan
+      # -------------------------------------------------
+      # Get all imported URLs and start scan on them
+      # -------------------------------------------------
+      - name: Get imported URLs
+        id: urls
         run: |
-          docker exec zap bash -c "
-            echo '=== Starting Active Scan ==='
-            curl -s 'http://localhost:8080/JSON/ascan/action/scanAllInScope/'
-          "
+          URLS=$(docker exec zap curl -s \
+            http://localhost:8080/JSON/core/view/urls/ | jq -r '.urls[]')
+          echo "$URLS"
+          echo "urls<<EOF" >> $GITHUB_OUTPUT
+          echo "$URLS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Wait for scan to finish
-        run: sleep 45
+      - name: Start Active Scan on imported URLs
+        run: |
+          for u in ${{ steps.urls.outputs.urls }}; do
+            echo "Scanning: $u"
+            docker exec zap curl -s \
+              "http://localhost:8080/JSON/ascan/action/scan/?url=$u"
+          done
 
-      # ----------------------------------------------
-      # GENERATE REPORTS
-      # ----------------------------------------------
+      - name: Wait for scanning
+        run: sleep 40
+
+      # -------------------------------------------------
+      # Generate reports using the running ZAP session
+      # -------------------------------------------------
       - name: Generate HTML Report
         run: |
-          docker exec zap bash -c "
-            mkdir -p /zap/wrk/reports
-            /zap/zap.sh -cmd report \
-              -o /zap/wrk/reports/zap-report.html -f HTML
-          "
+          docker exec zap mkdir -p /zap/wrk/reports
+          docker exec zap curl -s \
+            "http://localhost:8080/OTHER/core/other/htmlreport/" \
+            -o /zap/wrk/reports/zap-report.html
 
       - name: Generate JSON Report
         run: |
-          docker exec zap bash -c "
-            /zap/zap.sh -cmd report \
-              -o /zap/wrk/reports/zap-report.json -f JSON
-          "
+          docker exec zap curl -s \
+            "http://localhost:8080/OTHER/core/other/jsonreport/" \
+            -o /zap/wrk/reports/zap-report.json
 
-      # ----------------------------------------------
-      # UPLOAD RESULTS
-      # ----------------------------------------------
-      - name: Upload ZAP Reports
+      # -------------------------------------------------
+      # Upload reports
+      # -------------------------------------------------
+      - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
           name: zap-dast-results
