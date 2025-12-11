@@ -1,0 +1,13 @@
+id: testfire-api-simple-scan
+info:
+  name: TestFire Basic API Scan
+  severity: info
+
+requests:
+  - raw: "{{RequestFile}}"
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 302
+          - 401
