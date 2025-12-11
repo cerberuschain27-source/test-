@@ -1,63 +1,91 @@
-name: ZAP DAST Scan (Raw GET/POST)
+name: ZAP DAST (Raw GET/POST)
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  zap-scan:
+  zap:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Start ZAP Container (Correct Image)
+      # ----------------------------------------------
+      # START ZAP IN DAEMON MODE (CORRECT DOCKER IMAGE)
+      # ----------------------------------------------
+      - name: Start ZAP daemon
         run: |
           docker run -d --name zap \
             -u root \
             -p 8080:8080 \
             -v ${{ github.workspace }}:/zap/wrk \
             ghcr.io/zaproxy/zaproxy:latest \
-            zap.sh -daemon -port 8080 -config api.disablekey=true
+            zap.sh -daemon -port 8080 -host 0.0.0.0 \
+            -config api.disablekey=true
 
-      - name: Wait for ZAP Startup
+      - name: Wait for ZAP to fully start
         run: sleep 20
 
-      # --- REPLAY RAW GET REQUEST ---
-      - name: Replay GET.txt via ZAP
+      # ----------------------------------------------
+      # IMPORT RAW GET REQUEST
+      # ----------------------------------------------
+      - name: Import GET.txt (raw HTTP)
         run: |
           docker exec zap bash -c "
-            echo '=== Sending GET.txt to ZAP proxy ==='
-            cat /zap/wrk/get.txt | nc localhost 8080 || true
+            echo '=== Importing GET ==='
+            curl -s -X POST \
+              --data-urlencode \"request=$(cat /zap/wrk/get.txt)\" \
+              http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
-      # --- REPLAY RAW POST REQUEST ---
-      - name: Replay POST.txt via ZAP
+      # ----------------------------------------------
+      # IMPORT RAW POST REQUEST
+      # ----------------------------------------------
+      - name: Import POST.txt (raw HTTP)
         run: |
           docker exec zap bash -c "
-            echo '=== Sending POST.txt to ZAP proxy ==='
-            cat /zap/wrk/post.txt | nc localhost 8080 || true
+            echo '=== Importing POST ==='
+            curl -s -X POST \
+              --data-urlencode \"request=$(cat /zap/wrk/post.txt)\" \
+              http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
-      # --- ACTIVE SCAN ---
-      - name: Run ZAP Active Scan
+      # ----------------------------------------------
+      # RUN ACTIVE SCAN ON ALL IMPORTED RESOURCES
+      # (no hardcoding — ZAP scans whatever was imported)
+      # ----------------------------------------------
+      - name: Start Active Scan
         run: |
-          docker exec zap zap-cli --api-key '' active-scan --scanners all --recursive || true
+          docker exec zap bash -c "
+            echo '=== Starting Active Scan ==='
+            curl -s 'http://localhost:8080/JSON/ascan/action/scanAllInScope/'
+          "
 
-      # --- GENERATE REPORTS ---
+      - name: Wait for scan to finish
+        run: sleep 45
+
+      # ----------------------------------------------
+      # GENERATE REPORTS
+      # ----------------------------------------------
       - name: Generate HTML Report
         run: |
-          docker exec zap mkdir -p /zap/wrk/reports
-          docker exec zap zap-cli --api-key '' report \
-            -o /zap/wrk/reports/zap-report.html -f html || true
+          docker exec zap bash -c "
+            mkdir -p /zap/wrk/reports
+            /zap/zap.sh -cmd report \
+              -o /zap/wrk/reports/zap-report.html -f HTML
+          "
 
       - name: Generate JSON Report
         run: |
-          docker exec zap zap-cli --api-key '' report \
-            -o /zap/wrk/reports/zap-report.json -f json || true
+          docker exec zap bash -c "
+            /zap/zap.sh -cmd report \
+              -o /zap/wrk/reports/zap-report.json -f JSON
+          "
 
-      # --- UPLOAD RESULTS ---
+      # ----------------------------------------------
+      # UPLOAD RESULTS
+      # ----------------------------------------------
       - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
