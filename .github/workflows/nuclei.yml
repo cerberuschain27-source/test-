@@ -20,30 +20,28 @@ jobs:
             ghcr.io/zaproxy/zaproxy:latest \
             zap.sh -daemon -port 8080 -host 0.0.0.0 \
             -config api.disablekey=true
-
-      - name: Wait for ZAP to start
+      - name: Wait for ZAP startup
         run: sleep 20
 
-      - name: Import GET.txt (raw HTTP)
+      # --- IMPORT RAW REQUESTS ---
+      - name: Import GET.txt
         run: |
           docker exec zap bash -c "
             curl -s -X POST \
-              --data-urlencode 'request=$(cat /zap/wrk/get.txt)' \
-              http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
+            --data-urlencode \"request=$(cat /zap/wrk/get.txt)\" \
+            http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
-      - name: Import POST.txt (raw HTTP)
+      - name: Import POST.txt
         run: |
           docker exec zap bash -c "
             curl -s -X POST \
-              --data-urlencode 'request=$(cat /zap/wrk/post.txt)' \
-              http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
+            --data-urlencode \"request=$(cat /zap/wrk/post.txt)\" \
+            http://localhost:8080/JSON/importurls/action/importRawHttpRequest/
           "
 
-      # -------------------------------------------------
-      # Get all imported URLs and start scan on them
-      # -------------------------------------------------
-      - name: Get imported URLs
+      # --- GET ALL IMPORTED URLS ---
+      - name: Fetch imported URLs
         id: urls
         run: |
           URLS=$(docker exec zap curl -s \
@@ -53,20 +51,28 @@ jobs:
           echo "$URLS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Start Active Scan on imported URLs
+      # --- ADD URLs TO SCOPE (CRITICAL STEP) ---
+      - name: Add URLs to ZAP Scope
         run: |
           for u in ${{ steps.urls.outputs.urls }}; do
-            echo "Scanning: $u"
+            echo "Adding to scope: $u"
             docker exec zap curl -s \
-              "http://localhost:8080/JSON/ascan/action/scan/?url=$u"
+              "http://localhost:8080/JSON/context/action/includeInContext/?contextName=Default+Context&regex=$(echo $u | sed 's/\//\\\\\//g')"
+          done
+
+      # --- ACTIVE SCAN EVERY IN-SCOPE URL ---
+      - name: Active Scan
+        run: |
+          for u in ${{ steps.urls.outputs.urls }}; do
+            echo "Active Scanning: $u"
+            docker exec zap curl -s \
+              "http://localhost:8080/JSON/ascan/action/scan/?url=$u&recurse=true&inScopeOnly=true"
           done
 
       - name: Wait for scanning
-        run: sleep 40
+        run: sleep 45
 
-      # -------------------------------------------------
-      # Generate reports using the running ZAP session
-      # -------------------------------------------------
+      # --- GENERATE REPORTS ---
       - name: Generate HTML Report
         run: |
           docker exec zap mkdir -p /zap/wrk/reports
@@ -80,9 +86,7 @@ jobs:
             "http://localhost:8080/OTHER/core/other/jsonreport/" \
             -o /zap/wrk/reports/zap-report.json
 
-      # -------------------------------------------------
-      # Upload reports
-      # -------------------------------------------------
+      # --- UPLOAD AS ARTIFACT ---
       - name: Upload Reports
         uses: actions/upload-artifact@v4
         with:
