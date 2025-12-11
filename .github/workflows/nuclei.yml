@@ -1,8 +1,8 @@
 name: Nuclei API DAST (Swagger → Templates → Docker Scan)
 
 on:
-  push:
   workflow_dispatch:
+  push:
 
 jobs:
   nuclei:
@@ -12,9 +12,9 @@ jobs:
       - uses: actions/checkout@v4
 
       #############################################
-      # 1) Install nuclei v3.1.7 (OpenAPI supported)
+      # 1) Install nuclei v3.1.7 (OpenAPI support)
       #############################################
-      - name: Install Nuclei v3.1.7 (OpenAPI-supported)
+      - name: Install Nuclei v3.1.7
         run: |
           wget https://github.com/projectdiscovery/nuclei/releases/download/v3.1.7/nuclei_3.1.7_linux_amd64.zip -O nuclei317.zip
           unzip nuclei317.zip -d nuclei317
@@ -22,22 +22,22 @@ jobs:
           mv nuclei317/nuclei ./nuclei
 
       #############################################
-      # 2) Download Swagger File
+      # 2) Download Swagger
       #############################################
       - name: Download Swagger Spec
         run: |
           wget -O swagger.json "https://demo.testfire.net/swagger/properties.json"
 
       #############################################
-      # 3) Generate API Templates from Swagger
+      # 3) Generate Templates
       #############################################
-      - name: Generate API Templates (OpenAPI)
+      - name: Generate API Templates
         run: |
           mkdir -p oas-templates
           ./nuclei -openapi swagger.json -o oas-templates/
 
       #############################################
-      # 4) Run DAST Scan Using Docker Nuclei
+      # 4) Run Scan via Docker
       #############################################
       - name: Run Nuclei DAST Scan (Docker)
         run: |
@@ -46,13 +46,13 @@ jobs:
             -v ${{ github.workspace }}:/work \
             projectdiscovery/nuclei:latest \
             nuclei -t /work/oas-templates/ \
-                   -severity low,medium,high,critical \
-                   -o /work/results/api-dast-results.txt
+                   -o /work/results/api-dast-results.txt \
+                   -severity low,medium,high,critical
 
       #############################################
-      # 5) Upload Report As Artifact
+      # 5) Upload Results
       #############################################
-      - name: Upload Scan Results
+      - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
           name: nuclei-api-dast-results
